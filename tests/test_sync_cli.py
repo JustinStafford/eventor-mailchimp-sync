@@ -344,3 +344,12 @@ def test_env_file_is_loaded(routes, runner: CliRunner, tmp_path: Path):
     assert result.exit_code == 0, result.output
     request = routes.get(f"{AU_BASE_URL}/organisation/apiKey").calls.last.request
     assert request.headers["ApiKey"] == "from-dotenv"
+
+
+def test_version_and_bare_invocation(runner: CliRunner):
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip().startswith("eventor-mailchimp-sync 0.")
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "Usage:" in result.output

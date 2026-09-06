@@ -35,7 +35,7 @@ EXIT_MAILCHIMP = 3
 app = typer.Typer(
     help="Keep a Mailchimp audience in sync with a club's Eventor members and entrants.",
     add_completion=False,
-    no_args_is_help=True,
+    invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 
@@ -50,6 +50,7 @@ def _err(message: str) -> None:
 
 @app.callback()
 def _common(
+    ctx: typer.Context,
     env_file: Annotated[
         Path,
         typer.Option("--env-file", help="Load environment variables from this file if it exists."),
@@ -62,6 +63,9 @@ def _common(
 ) -> None:
     if version:
         _echo(f"eventor-mailchimp-sync {__version__}")
+        raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        _echo(ctx.get_help())
         raise typer.Exit()
     if env_file.is_file():
         load_dotenv(env_file, override=False)

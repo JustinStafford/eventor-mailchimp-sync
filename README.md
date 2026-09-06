@@ -254,25 +254,27 @@ name_patterns = ["sprint series"]       # and/or case-insensitive regular expres
 
 ### GitHub Actions
 
-`.github/workflows/sync.yml` runs daily at 16:07 UTC (02:07 Sydney time in winter, 03:07 in
-summer; GitHub cron is UTC only and edit the `cron` line to change it) and on demand
-(`workflow_dispatch`, with an *apply* tick box that defaults to on), then uploads `report.json`
-as an artifact for 14 days. GitHub may start scheduled runs up to half an hour late, and it
-switches schedules off in repositories with no commits for 60 days, so expect an email asking
-you to re-enable it if the code sits untouched.
+Run the sync from a **private** repository, not from a public one. GitHub keeps secrets safe
+either way, but on a public repository every workflow log and artifact is readable by anyone,
+and the sync prints names and email addresses in its diff and uploads them in the report.
 
-1. Fork or copy this repository into a **private** repository. The report artifact contains
-   member names and email addresses unless you set the repository variable `SYNC_REDACT` to
-   `true`.
-2. Add repository secrets `EVENTOR_API_KEY`, `MAILCHIMP_API_KEY` and `MAILCHIMP_LIST_ID`.
-3. Add repository variables for anything else you want to change (`EVENTOR_BASE_URL`,
-   `SYNC_WINDOW_MONTHS`, ...). Unset variables fall back to the defaults above.
-4. Commit a `config.toml` to your private copy if you want series tags (it is git-ignored here
-   so this public repository never carries club-specific data; use `git add -f config.toml`).
-5. Run the workflow once by hand with *apply* unticked, download the report, then let the
-   schedule take over.
+The recommended setup is a private repository containing only a workflow and, optionally, a
+`config.toml`; the workflow installs this tool from GitHub with `uvx` on every run.
+[`examples/private-runner/`](examples/private-runner/) has the workflow and step-by-step
+instructions. In short: create a private repository, copy the workflow in, add the secrets
+`EVENTOR_API_KEY`, `MAILCHIMP_API_KEY` and `MAILCHIMP_LIST_ID`, pin `TOOL_REF` to a tag or
+commit, and run it once by hand with *apply* unticked.
 
-`.github/workflows/ci.yml` runs ruff and pytest on every push and pull request.
+The workflow runs daily at 16:07 UTC (02:07 Sydney time in winter, 03:07 in summer; GitHub cron
+is UTC only, so edit the `cron` line to change it) and on demand (`workflow_dispatch`, with an
+*apply* tick box that defaults to on), then uploads `report.json` as an artifact for 14 days.
+GitHub may start scheduled runs up to half an hour late, and it switches schedules off in
+repositories with no commits for 60 days, so expect an email asking you to re-enable it if the
+runner repository sits untouched.
+
+This repository's own `.github/workflows/sync.yml` is the same workflow gated on a repository
+variable `SYNC_ENABLED`, so it stays dormant here. `.github/workflows/ci.yml` runs ruff and
+pytest on every push and pull request.
 
 ### launchd (macOS)
 

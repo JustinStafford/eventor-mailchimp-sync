@@ -1,33 +1,29 @@
-# Scheduled Eventor -> Mailchimp sync.
+# Scheduled Eventor -> Mailchimp sync for a club's PRIVATE runner repository.
 #
-# This copy lives in the PUBLIC tool repository and is gated on the repository
-# variable SYNC_ENABLED so it does nothing here. Clubs should run the sync from a
-# private repository instead: see examples/private-runner/README.md. If you do
-# run it from a private copy of this repository, set SYNC_ENABLED to true.
+# Copy this file to .github/workflows/sync.yml in a private repository that
+# contains nothing but this workflow and, optionally, a config.toml with your
+# event-series tag mappings. The tool itself is installed straight from the
+# public repository at the ref in TOOL_REF, so there is no code to maintain.
 #
 # Secrets (Settings > Secrets and variables > Actions > Secrets):
 #   EVENTOR_API_KEY, MAILCHIMP_API_KEY, MAILCHIMP_LIST_ID
-# Optional variables (same page > Variables):
-#   EVENTOR_BASE_URL, MAILCHIMP_SERVER_PREFIX, SYNC_WINDOW_MONTHS,
-#   SYNC_PREVIOUS_YEAR_UNTIL_MONTH, SYNC_MEMBER_SOURCE, SYNC_REQUIRE_PAID,
-#   SYNC_MEMBER_TAG, SYNC_ENTRANT_TAG, SYNC_INCLUDE_STARTS, SYNC_PERSONS_CONTACT_INDEX,
-#   SYNC_UPDATE_NAMES,
-#   MAILCHIMP_MERGE_CLUB, MAILCHIMP_MERGE_MEMBERSHIP_YEAR, MAILCHIMP_MERGE_EVENTOR_ID,
-#   MAILCHIMP_MERGE_MOBILE, SYNC_PHONE_COUNTRY_CODE,
-#   SYNC_REDACT ("true" masks emails and names in the uploaded report)
-#
-# Unset variables arrive as empty strings, which the tool treats as "use the
-# default"; to switch a feature off set its variable to the literal value none.
-#
-# The report artifact contains member names and email addresses unless
-# SYNC_REDACT is set. Run this workflow from a private repository.
+# Variables (same page > Variables), all optional:
+#   TOOL_REF                    tag or commit of the tool to run (default main)
+#   SYNC_PERSONS_CONTACT_INDEX  true to include lapsed members who still enter
+#   SYNC_REDACT                 true to mask names and emails in logs and the report
+#   EVENTOR_BASE_URL, SYNC_WINDOW_MONTHS, SYNC_PREVIOUS_YEAR_UNTIL_MONTH,
+#   SYNC_MEMBER_SOURCE, SYNC_REQUIRE_PAID, SYNC_MEMBER_TAG, SYNC_ENTRANT_TAG,
+#   SYNC_INCLUDE_STARTS, SYNC_UPDATE_NAMES, MAILCHIMP_MERGE_CLUB,
+#   MAILCHIMP_MERGE_MEMBERSHIP_YEAR, MAILCHIMP_MERGE_EVENTOR_ID,
+#   MAILCHIMP_MERGE_MOBILE, SYNC_PHONE_COUNTRY_CODE
+# Unset variables arrive as empty strings and mean "use the default"; the
+# literal value none switches a feature off.
 
 name: Sync Mailchimp audience
 
 on:
   schedule:
     # GitHub cron is UTC only. 16:07 UTC is 02:07 AEST (03:07 during AEDT).
-    # Runs can start up to half an hour late at busy times.
     - cron: "7 16 * * *"
   workflow_dispatch:
     inputs:
@@ -45,7 +41,6 @@ concurrency:
 
 jobs:
   sync:
-    if: ${{ vars.SYNC_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -69,16 +64,14 @@ jobs:
       MAILCHIMP_MERGE_MOBILE: ${{ vars.MAILCHIMP_MERGE_MOBILE }}
       SYNC_PHONE_COUNTRY_CODE: ${{ vars.SYNC_PHONE_COUNTRY_CODE }}
       SYNC_REPORT_PATH: report.json
+      TOOL_REPO: https://github.com/JustinStafford/eventor-mailchimp-sync
+      TOOL_REF: ${{ vars.TOOL_REF || 'main' }}
     steps:
+      # Only needed for config.toml; harmless otherwise.
       - uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install
-        run: uv sync --frozen --no-dev
 
       - name: Sync
         env:
@@ -89,9 +82,8 @@ jobs:
           args=()
           if [ "$APPLY" = "true" ]; then args+=(--apply); fi
           if [ "$REDACT" = "true" ]; then args+=(--redact); fi
-          # config.toml is git-ignored; commit a config.toml to your private fork
-          # or point SYNC_CONFIG at another file to enable series tags.
-          uv run eventor-mailchimp-sync sync "${args[@]}"
+          if [ -f config.toml ]; then args+=(--config config.toml); fi
+          uvx --from "git+${TOOL_REPO}@${TOOL_REF}" eventor-mailchimp-sync sync "${args[@]}"
 
       - name: Upload run report
         if: always()
