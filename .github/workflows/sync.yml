@@ -21,8 +21,9 @@ name: Sync Mailchimp audience
 
 on:
   schedule:
-    # Daily at 19:17 UTC (05:17 AEST / 06:17 AEDT). Avoid :00 to dodge the rush.
-    - cron: "17 19 * * *"
+    # GitHub cron is UTC only. 16:07 UTC is 02:07 AEST (03:07 during AEDT).
+    # Runs can start up to half an hour late at busy times.
+    - cron: "7 16 * * *"
   workflow_dispatch:
     inputs:
       apply:

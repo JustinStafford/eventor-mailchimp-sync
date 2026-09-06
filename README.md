@@ -254,8 +254,12 @@ name_patterns = ["sprint series"]       # and/or case-insensitive regular expres
 
 ### GitHub Actions
 
-`.github/workflows/sync.yml` runs daily and on demand (`workflow_dispatch`, with an *apply* tick
-box that defaults to on), then uploads `report.json` as an artifact for 14 days.
+`.github/workflows/sync.yml` runs daily at 16:07 UTC (02:07 Sydney time in winter, 03:07 in
+summer; GitHub cron is UTC only and edit the `cron` line to change it) and on demand
+(`workflow_dispatch`, with an *apply* tick box that defaults to on), then uploads `report.json`
+as an artifact for 14 days. GitHub may start scheduled runs up to half an hour late, and it
+switches schedules off in repositories with no commits for 60 days, so expect an email asking
+you to re-enable it if the code sits untouched.
 
 1. Fork or copy this repository into a **private** repository. The report artifact contains
    member names and email addresses unless you set the repository variable `SYNC_REDACT` to
@@ -324,14 +328,20 @@ from datetime import datetime, timedelta
 
 from eventor_client import AU_BASE_URL, EventorClient, ResponseCache
 
-with EventorClient(AU_BASE_URL, api_key, cache=ResponseCache(".eventor-cache", ttl_seconds=3600)) as client:
+cache = ResponseCache(".eventor-cache", ttl_seconds=3600)
+with EventorClient(AU_BASE_URL, api_key, cache=cache) as client:
     org = client.organisation_for_api_key()
-    members = client.memberships(org.id, 2026)                      # AU only
-    people = client.persons_in_organisation(org.id)                 # every instance
-    events = client.events(organisation_ids=[org.id], from_date=datetime.now() - timedelta(days=90))
-    entries = client.entries(event_ids=[e.id for e in events])       # organisation_ids would filter by the *entrant's* club
-    starts = client.event_starts(events[0].id)                      # includes walk-ups once published
-    results = client.get_xml("/results/event", {"eventId": str(events[0].id)})  # any other endpoint
+    # Australian instance only; everywhere else use persons_in_organisation()
+    members = client.memberships(org.id, 2026)
+    people = client.persons_in_organisation(org.id)
+    since = datetime.now() - timedelta(days=90)
+    events = client.events(organisation_ids=[org.id], from_date=since)
+    # organisation_ids on entries() filters by the entrant's club, so pass event IDs
+    entries = client.entries(event_ids=[e.id for e in events])
+    # Every starter, including walk-ups, once the start list is published
+    starts = client.event_starts(events[0].id)
+    # Any other endpoint: the parsed root element
+    results = client.get_xml("/results/event", {"eventId": str(events[0].id)})
 ```
 
 Results are frozen dataclasses (`Organisation`, `Person`, `Membership`, `Event`, `Entry`,
