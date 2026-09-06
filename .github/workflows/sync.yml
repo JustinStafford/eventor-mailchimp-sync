@@ -1,0 +1,96 @@
+# Scheduled Eventor -> Mailchimp sync.
+#
+# Secrets (Settings > Secrets and variables > Actions > Secrets):
+#   EVENTOR_API_KEY, MAILCHIMP_API_KEY, MAILCHIMP_LIST_ID
+# Optional variables (same page > Variables):
+#   EVENTOR_BASE_URL, MAILCHIMP_SERVER_PREFIX, SYNC_WINDOW_MONTHS,
+#   SYNC_PREVIOUS_YEAR_UNTIL_MONTH, SYNC_MEMBER_SOURCE, SYNC_REQUIRE_PAID,
+#   SYNC_MEMBER_TAG, SYNC_ENTRANT_TAG, SYNC_INCLUDE_STARTS, SYNC_PERSONS_CONTACT_INDEX,
+#   SYNC_UPDATE_NAMES,
+#   MAILCHIMP_MERGE_CLUB, MAILCHIMP_MERGE_MEMBERSHIP_YEAR, MAILCHIMP_MERGE_EVENTOR_ID,
+#   MAILCHIMP_MERGE_MOBILE, SYNC_PHONE_COUNTRY_CODE,
+#   SYNC_REDACT ("true" masks emails and names in the uploaded report)
+#
+# Unset variables arrive as empty strings, which the tool treats as "use the
+# default"; to switch a feature off set its variable to the literal value none.
+#
+# The report artifact contains member names and email addresses unless
+# SYNC_REDACT is set. Run this workflow from a private repository.
+
+name: Sync Mailchimp audience
+
+on:
+  schedule:
+    # Daily at 19:17 UTC (05:17 AEST / 06:17 AEDT). Avoid :00 to dodge the rush.
+    - cron: "17 19 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write changes to Mailchimp (untick for a dry run)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eventor-mailchimp-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EVENTOR_BASE_URL: ${{ vars.EVENTOR_BASE_URL }}
+      EVENTOR_API_KEY: ${{ secrets.EVENTOR_API_KEY }}
+      MAILCHIMP_API_KEY: ${{ secrets.MAILCHIMP_API_KEY }}
+      MAILCHIMP_LIST_ID: ${{ secrets.MAILCHIMP_LIST_ID }}
+      MAILCHIMP_SERVER_PREFIX: ${{ vars.MAILCHIMP_SERVER_PREFIX }}
+      SYNC_WINDOW_MONTHS: ${{ vars.SYNC_WINDOW_MONTHS }}
+      SYNC_PREVIOUS_YEAR_UNTIL_MONTH: ${{ vars.SYNC_PREVIOUS_YEAR_UNTIL_MONTH }}
+      SYNC_MEMBER_SOURCE: ${{ vars.SYNC_MEMBER_SOURCE }}
+      SYNC_REQUIRE_PAID: ${{ vars.SYNC_REQUIRE_PAID }}
+      SYNC_MEMBER_TAG: ${{ vars.SYNC_MEMBER_TAG }}
+      SYNC_ENTRANT_TAG: ${{ vars.SYNC_ENTRANT_TAG }}
+      SYNC_INCLUDE_STARTS: ${{ vars.SYNC_INCLUDE_STARTS }}
+      SYNC_PERSONS_CONTACT_INDEX: ${{ vars.SYNC_PERSONS_CONTACT_INDEX }}
+      SYNC_UPDATE_NAMES: ${{ vars.SYNC_UPDATE_NAMES }}
+      MAILCHIMP_MERGE_CLUB: ${{ vars.MAILCHIMP_MERGE_CLUB }}
+      MAILCHIMP_MERGE_MEMBERSHIP_YEAR: ${{ vars.MAILCHIMP_MERGE_MEMBERSHIP_YEAR }}
+      MAILCHIMP_MERGE_EVENTOR_ID: ${{ vars.MAILCHIMP_MERGE_EVENTOR_ID }}
+      MAILCHIMP_MERGE_MOBILE: ${{ vars.MAILCHIMP_MERGE_MOBILE }}
+      SYNC_PHONE_COUNTRY_CODE: ${{ vars.SYNC_PHONE_COUNTRY_CODE }}
+      SYNC_REPORT_PATH: report.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen --no-dev
+
+      - name: Sync
+        env:
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply == true }}
+          REDACT: ${{ vars.SYNC_REDACT == 'true' }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$APPLY" = "true" ]; then args+=(--apply); fi
+          if [ "$REDACT" = "true" ]; then args+=(--redact); fi
+          # config.toml is git-ignored; commit a config.toml to your private fork
+          # or point SYNC_CONFIG at another file to enable series tags.
+          uv run eventor-mailchimp-sync sync "${args[@]}"
+
+      - name: Upload run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-report-${{ github.run_number }}
+          path: report.json
+          if-no-files-found: ignore
+          retention-days: 14

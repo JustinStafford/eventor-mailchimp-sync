@@ -1,0 +1,15 @@
+# Optional event-series tag mappings. Copy to config.toml (git-ignored) or point
+# SYNC_CONFIG at it. Every entrant to a matching event gets the series tag in
+# addition to the plain "entrant" tag. Tags are managed: they are removed again
+# once the person has no matching entry inside the sync window.
+
+[series.sprint]
+tag = "series-sprint"
+# Match by Eventor event ID ...
+event_ids = [12345, 12346]
+# ... and/or by a Python regular expression against the event name (case-insensitive).
+name_patterns = ["sprint series", "^twilight"]
+
+[series.bush]
+tag = "series-bush"
+name_patterns = ["bush classic"]

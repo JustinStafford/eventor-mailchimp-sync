@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd job that runs the sync every morning at 05:30 on a Mac.
+
+  1. Clone the repository somewhere permanent, e.g. ~/eventor-mailchimp-sync,
+     run `uv sync` there and create a .env (see .env.example).
+  2. Edit the paths below (uv lives in /opt/homebrew/bin on Apple silicon,
+     /usr/local/bin on Intel).
+  3. Copy this file to ~/Library/LaunchAgents/ and load it:
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/au.org.example.eventor-mailchimp-sync.plist
+     Unload with `launchctl bootout gui/$(id -u)/au.org.example.eventor-mailchimp-sync`.
+  4. Reports land in the WorkingDirectory as report.json; logs in ~/Library/Logs.
+
+  Remove the final "apply" argument (with its two leading dashes) to run as a dry run.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>au.org.example.eventor-mailchimp-sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/uv</string>
+    <string>run</string>
+    <string>--frozen</string>
+    <string>eventor-mailchimp-sync</string>
+    <string>sync</string>
+    <string>--apply</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/you/eventor-mailchimp-sync</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>5</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/you/Library/Logs/eventor-mailchimp-sync.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/you/Library/Logs/eventor-mailchimp-sync.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
