@@ -157,52 +157,72 @@ Tests cover each of these rules (`tests/test_diff.py`, `tests/test_mailchimp.py`
 
 ## Setting it up for your club
 
-You need Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+The suggested setup is a small **private** GitHub repository that runs the sync every night and
+installs this tool from GitHub each time. You do not need to clone this repository: `uvx` runs
+the tool straight from GitHub for the one-off checks too. Install [uv](https://docs.astral.sh/uv/)
+on your machine for those.
 
 1. **Get an Eventor API key.** Club API keys are issued by your federation (in Australia, ask
    Orienteering Australia). The key identifies your club; the tool discovers the club ID itself.
 2. **Get a Mailchimp API key** (*Account > Extras > API keys*) and the **audience ID** (*Audience
    > Settings > Audience name and defaults*). The key's `-usNN` suffix is the server prefix.
 3. **Optionally add merge fields** `CLUB`, `MEMBERYEAR` (number) and `EVENTORID` (text) to the
-   audience. `EVENTORID` enables reliable changed-email detection.
-4. Clone and install:
+   audience. `EVENTORID` enables reliable changed-email detection. `PHONE` already exists.
+4. **Try it from your own machine first.** In an empty folder, create a `.env` (see
+   [`.env.example`](.env.example) for every option):
 
-   ```bash
-   git clone https://github.com/JustinStafford/eventor-mailchimp-sync.git
-   cd eventor-mailchimp-sync
-   uv sync
-   cp .env.example .env   # then fill in the keys; .env is git-ignored
+   ```
+   EVENTOR_BASE_URL=https://eventor.orienteering.asn.au/api
+   EVENTOR_API_KEY=...
+   MAILCHIMP_API_KEY=...
+   MAILCHIMP_LIST_ID=...
+   SYNC_PERSONS_CONTACT_INDEX=true
    ```
 
-5. Check both connections:
+   Then check both connections and do a dry run (the default; nothing is written):
 
    ```bash
-   uv run eventor-mailchimp-sync whoami
+   uvx --from git+https://github.com/JustinStafford/eventor-mailchimp-sync eventor-mailchimp-sync whoami
    ```
 
    ```bash
-   uv run eventor-mailchimp-sync audience
+   uvx --from git+https://github.com/JustinStafford/eventor-mailchimp-sync eventor-mailchimp-sync audience
    ```
-
-6. Dry run (the default; nothing is written):
 
    ```bash
-   uv run eventor-mailchimp-sync sync
+   uvx --from git+https://github.com/JustinStafford/eventor-mailchimp-sync eventor-mailchimp-sync sync
    ```
 
-   Read the diff and `report.json`. Check the *Skipped* and *No email address* sections in
-   particular. When it looks right:
+   The dry run takes a few minutes (Eventor is slow to assemble a year of entries) and prints
+   progress as it goes. Read the diff and `report.json`; look at the *Skipped* and *No email
+   address* sections in particular. Add `--apply` to the last command when it looks right, or
+   leave the first apply to the workflow below.
+5. **Create the private runner repository.** Make a new private repository on GitHub (do not
+   fork this one; forks of public repositories cannot be made private) and:
+   - copy [`examples/private-runner/sync.yml`](examples/private-runner/sync.yml) to
+     `.github/workflows/sync.yml`;
+   - under *Settings > Secrets and variables > Actions*, add the secrets `EVENTOR_API_KEY`,
+     `MAILCHIMP_API_KEY` and `MAILCHIMP_LIST_ID`, and the variables
+     `SYNC_PERSONS_CONTACT_INDEX` = `true` and `TOOL_REF` = a tag or commit of this repository,
+     so the sync only changes when you move the pin;
+   - open *Actions*, run *Sync Mailchimp audience* by hand with *apply* unticked, and read the
+     report artifact. From then on it runs nightly at 16:07 UTC (02:07 Sydney time in winter).
 
-   ```bash
-   uv run eventor-mailchimp-sync sync --apply
-   ```
+   [`examples/private-runner/README.md`](examples/private-runner/README.md) has the same steps
+   in more detail, and [Running it on a schedule](#running-it-on-a-schedule) explains the timing
+   and the alternatives.
+6. **Optionally tag entrants by event series.** Add a `config.toml` to the private repository
+   (see [`config.example.toml`](config.example.toml)), for example `series-sprint` for everyone
+   who entered a Sprint Series round. The workflow picks it up automatically; locally, keep it
+   next to `.env`.
 
-7. Optionally create `config.toml` (git-ignored; see `config.example.toml`) to tag entrants by
-   event series, for example `series-sprint` for everyone who entered a Sprint Series round.
+Why private: GitHub keeps secrets safe on any repository, but on a public one every workflow log
+and artifact is readable by anyone, and the sync prints names and email addresses in its diff and
+uploads them in the report.
 
 `eventor-mailchimp-sync sync --help` lists the options: `--apply`, `--report PATH`,
 `--config PATH`, `--window-months N`, `--redact` (mask emails and names in the diff and
-report) and `--quiet`.
+report), `--quiet` and `--no-progress`.
 
 Exit codes: `0` success, `1` configuration problem, `2` Eventor API failure, `3` Mailchimp API
 failure, including any write that failed during `--apply` (the other writes still go through and
@@ -252,29 +272,27 @@ name_patterns = ["sprint series"]       # and/or case-insensitive regular expres
 
 ## Running it on a schedule
 
-### GitHub Actions
+### GitHub Actions (suggested)
 
-Run the sync from a **private** repository, not from a public one. GitHub keeps secrets safe
-either way, but on a public repository every workflow log and artifact is readable by anyone,
-and the sync prints names and email addresses in its diff and uploads them in the report.
+[`examples/private-runner/sync.yml`](examples/private-runner/sync.yml), run from a private
+repository as described in [Setting it up for your club](#setting-it-up-for-your-club), is the
+suggested way to run the sync. It installs this tool from GitHub with `uvx` on every run at the
+tag or commit named by the `TOOL_REF` variable, runs `sync --apply` (or a dry run when launched
+by hand with *apply* unticked), and uploads `report.json` as an artifact for 14 days.
 
-The recommended setup is a private repository containing only a workflow and, optionally, a
-`config.toml`; the workflow installs this tool from GitHub with `uvx` on every run.
-[`examples/private-runner/`](examples/private-runner/) has the workflow and step-by-step
-instructions. In short: create a private repository, copy the workflow in, add the secrets
-`EVENTOR_API_KEY`, `MAILCHIMP_API_KEY` and `MAILCHIMP_LIST_ID`, pin `TOOL_REF` to a tag or
-commit, and run it once by hand with *apply* unticked.
-
-The workflow runs daily at 16:07 UTC (02:07 Sydney time in winter, 03:07 in summer; GitHub cron
-is UTC only, so edit the `cron` line to change it) and on demand (`workflow_dispatch`, with an
-*apply* tick box that defaults to on), then uploads `report.json` as an artifact for 14 days.
-GitHub may start scheduled runs up to half an hour late, and it switches schedules off in
-repositories with no commits for 60 days, so expect an email asking you to re-enable it if the
-runner repository sits untouched.
+It runs daily at 16:07 UTC (02:07 Sydney time in winter, 03:07 in summer; GitHub cron is UTC
+only, so edit the `cron` line to change it) and on demand via `workflow_dispatch`. GitHub may
+start scheduled runs up to half an hour late, and it switches schedules off in repositories with
+no commits for 60 days, so expect an email asking you to re-enable it if the runner repository
+sits untouched. Set the variable `SYNC_REDACT` to `true` if you would rather the artifact carried
+no names or addresses.
 
 This repository's own `.github/workflows/sync.yml` is the same workflow gated on a repository
 variable `SYNC_ENABLED`, so it stays dormant here. `.github/workflows/ci.yml` runs ruff and
 pytest on every push and pull request.
+
+The alternatives below suit a club that would rather run the sync from a machine of its own.
+They need a clone: `git clone` this repository, run `uv sync` in it, and create a `.env`.
 
 ### launchd (macOS)
 
