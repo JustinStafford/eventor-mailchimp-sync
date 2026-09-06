@@ -32,6 +32,12 @@ MEMBER_FIELDS = "members.email_address,members.status,members.merge_fields,membe
 PROTECTED_STATUSES = frozenset({"unsubscribed", "cleaned", "archived"})
 
 
+# 400 titles Mailchimp uses when it refuses one particular contact rather than the request.
+CONTACT_REJECTION_TITLES = frozenset(
+    {"Member In Compliance State", "Forgotten Email Not Subscribed", "Member Exists"}
+)
+
+
 class MailchimpError(Exception):
     """An error response from Mailchimp, or a transport failure."""
 
@@ -39,6 +45,26 @@ class MailchimpError(Exception):
         super().__init__(message)
         self.status_code = status_code
         self.detail = detail
+
+    @property
+    def is_contact_rejection(self) -> bool:
+        """True when Mailchimp refused this one contact (fake-looking address, compliance
+        state, forgotten email) rather than failing the request as a whole.
+
+        A 400 that names a field other than ``email_address`` (for example a merge
+        field) is a problem with the run, not the contact, and is *not* a rejection.
+        """
+        if self.status_code != 400 or not isinstance(self.detail, dict):
+            return False
+        if self.detail.get("title") in CONTACT_REJECTION_TITLES:
+            return True
+        fields = {
+            str(e.get("field", "")) for e in self.detail.get("errors") or [] if isinstance(e, dict)
+        }
+        if fields - {"email_address", ""}:
+            return False
+        text = str(self.detail.get("detail") or "").lower()
+        return "email" in text or "looks fake" in text
 
 
 def normalise_email(email: str) -> str:

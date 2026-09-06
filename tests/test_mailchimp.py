@@ -201,6 +201,39 @@ def test_gives_up_after_retries(client):
     assert route.call_count == client.max_retries + 1
 
 
+def test_contact_rejection_detection():
+    fake = MailchimpError(
+        "x",
+        status_code=400,
+        detail={
+            "title": "Invalid Resource",
+            "detail": "john@hotmail.com looks fake or invalid, please enter a real email address.",
+        },
+    )
+    assert fake.is_contact_rejection
+    compliance = MailchimpError(
+        "x", status_code=400, detail={"title": "Member In Compliance State"}
+    )
+    assert compliance.is_contact_rejection
+    merge = MailchimpError(
+        "x",
+        status_code=400,
+        detail={
+            "title": "Invalid Resource",
+            "detail": "The resource submitted could not be validated.",
+            "errors": [
+                {"field": "merge_fields.PHONE", "message": "Please enter a valid phone number."}
+            ],
+        },
+    )
+    assert not merge.is_contact_rejection
+    assert not MailchimpError(
+        "x", status_code=401, detail={"title": "API Key Invalid"}
+    ).is_contact_rejection
+    assert not MailchimpError("x", status_code=500, detail="boom").is_contact_rejection
+    assert not MailchimpError("x").is_contact_rejection
+
+
 def test_client_has_no_delete_or_archive():
     assert not any(
         name.startswith(("delete", "archive", "unsubscribe")) for name in dir(MailchimpClient)

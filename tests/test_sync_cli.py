@@ -270,7 +270,15 @@ def test_apply_reports_write_failures_and_exits_nonzero(routes, runner: CliRunne
 
     def put_member(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith(bad):
-            return httpx.Response(400, json={"title": "Invalid Resource", "detail": "looks fake"})
+            # A merge-field problem is a fault in the run, not in the contact.
+            return httpx.Response(
+                400,
+                json={
+                    "title": "Invalid Resource",
+                    "detail": "The resource submitted could not be validated.",
+                    "errors": [{"field": "merge_fields.PHONE", "message": "bad phone"}],
+                },
+            )
         return httpx.Response(200, json={"status": "subscribed"})
 
     routes["put_member"].side_effect = put_member
@@ -283,6 +291,42 @@ def test_apply_reports_write_failures_and_exits_nonzero(routes, runner: CliRunne
     assert "Invalid Resource" in report["exceptions"]["api_errors"][0]["error"]
     # The other writes still happened.
     assert len(writes(routes)) == 5
+
+
+def test_rejected_contact_is_reported_but_does_not_fail_the_run(
+    routes, runner: CliRunner, tmp_path: Path
+):
+    bad = subscriber_hash("alex.example@example.com")
+
+    def put_member(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(bad):
+            return httpx.Response(
+                400,
+                json={
+                    "title": "Invalid Resource",
+                    "detail": "alex.example@example.com looks fake or invalid, "
+                    "please enter a real email address.",
+                },
+            )
+        return httpx.Response(200, json={"status": "subscribed"})
+
+    routes["put_member"].side_effect = put_member
+    result = runner.invoke(app, ["sync", "--apply", "--as-of", "2026-09-06"], env=ENV)
+    assert result.exit_code == 0, result.output
+    assert "Rejected by Mailchimp (1)" in result.output
+    assert "looks fake" in result.output
+    assert "API errors" not in result.output
+    report = json.loads((tmp_path / "report.json").read_text())
+    assert report["ok"] is True
+    assert report["summary"]["rejected_contacts"] == 1
+    assert report["summary"]["api_errors"] == 0
+    assert report["exceptions"]["api_errors"] == []
+    (rejected,) = report["exceptions"]["rejected"]
+    assert rejected["email"] == "alex.example@example.com"
+    assert rejected["person_ids"] == [1001]
+    assert "looks fake" in rejected["error"]
+    change = next(c for c in report["changes"] if c["email"] == "alex.example@example.com")
+    assert change["rejected"] is True and change["applied"] is False
 
 
 def test_eventor_failure_exits_2(routes, runner: CliRunner):

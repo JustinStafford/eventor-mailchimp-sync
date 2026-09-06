@@ -226,7 +226,10 @@ report), `--quiet` and `--no-progress`.
 
 Exit codes: `0` success, `1` configuration problem, `2` Eventor API failure, `3` Mailchimp API
 failure, including any write that failed during `--apply` (the other writes still go through and
-the failures are listed in the report).
+the failures are listed in the report). A contact that Mailchimp refuses on its own merits, for
+example an address it deems fake or one in a compliance state, is not a failure: it is listed
+under *Rejected by Mailchimp* and in `exceptions.rejected`, the run continues, and the exit code
+stays `0`. Such a contact is retried every run until the address is fixed in Eventor.
 
 ## Configuration reference
 
@@ -331,13 +334,15 @@ act on the exceptions without re-running anything.
     "shared_email": [...],                                        // one address, several people
     "changed_email": [...],            // same EVENTORID, different address (needs the merge field)
     "possible_changed_email": [...],   // same name, different address (heuristic)
-    "api_errors": [...]
+    "rejected": [...],                 // contacts Mailchimp refused (fake-looking address, compliance state)
+    "api_errors": [...]                // real failures; these make the run exit non-zero
   }
 }
 ```
 
-Typical follow-ups: chase members in `no_email` for an address, decide whether `cleaned`
-(bounced) members need a phone call, and merge the two contacts listed in `changed_email`.
+Typical follow-ups: chase members in `no_email` for an address, ask anyone in `rejected` for a
+different one, decide whether `cleaned` (bounced) members need a phone call, and merge the two
+contacts listed in `changed_email`.
 
 ## Using the Eventor client on its own
 

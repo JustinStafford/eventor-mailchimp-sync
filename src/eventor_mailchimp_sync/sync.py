@@ -28,7 +28,11 @@ class RunResult:
 
     @property
     def api_errors(self) -> list[ContactChange]:
-        return [c for c in self.plan.changes if c.error]
+        return [c for c in self.plan.changes if c.error and not c.rejected]
+
+    @property
+    def rejected(self) -> list[ContactChange]:
+        return [c for c in self.plan.changes if c.rejected]
 
 
 def make_eventor_client(config: SyncConfig) -> EventorClient:
@@ -111,14 +115,20 @@ def run(
                     apply_change(mailchimp_client, change)
                 except MailchimpError as exc:
                     change.error = str(exc)
-                    log.error("failed to apply change for %s: %s", change.email, exc)
+                    if exc.is_contact_rejection:
+                        # Data problem with this one contact: report it, keep going, and
+                        # do not fail the run over it.
+                        change.rejected = True
+                        log.warning("Mailchimp rejected %s: %s", change.email, exc)
+                    else:
+                        log.error("failed to apply change for %s: %s", change.email, exc)
     finally:
         if own_eventor:
             eventor_client.close()
         if own_mailchimp:
             mailchimp_client.close()
 
-    ok = not any(c.error for c in plan.changes)
+    ok = not any(c.error and not c.rejected for c in plan.changes)
     finished = datetime.now()
     merge_present = {
         "FNAME": targets.first_name,

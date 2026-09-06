@@ -89,6 +89,7 @@ class ContactChange:
     existing: AudienceMember | None = None
     applied: bool = False
     error: str | None = None
+    rejected: bool = False
 
     @property
     def has_writes(self) -> bool:
@@ -125,6 +126,8 @@ class Plan:
             "merge_field_changes": sum(len(c.merge_changes) for c in updates),
             "changed_emails": len(self.changed_emails),
             "possible_changed_emails": len(self.possible_changed_emails),
+            "rejected_contacts": sum(1 for c in self.changes if c.rejected),
+            "api_errors": sum(1 for c in self.changes if c.error and not c.rejected),
         }
 
 

@@ -171,7 +171,14 @@ def render_diff(
             )
         lines.append("")
 
-    errors = [c for c in plan.changes if c.error]
+    rejected = [c for c in plan.changes if c.rejected]
+    if rejected:
+        lines.append(f"Rejected by Mailchimp ({len(rejected)}) - fix the address in Eventor")
+        for c in rejected:
+            lines.append(f"  x {_email(c.email, redact):<40} {_name(c.name, redact):<28} {c.error}")
+        lines.append("")
+
+    errors = [c for c in plan.changes if c.error and not c.rejected]
     if errors:
         lines.append(f"API errors ({len(errors)})")
         for c in errors:
@@ -184,6 +191,7 @@ def render_diff(
         f"({s['tag_additions']} tag additions, {s['tag_removals']} tag removals, "
         f"{s['merge_field_changes']} merge-field changes), {s['unchanged_contacts']} unchanged, "
         f"{s['skipped_contacts']} skipped, {len(pull.no_email)} without email"
+        + (f", {len(rejected)} rejected by Mailchimp" if rejected else "")
         + (f", {len(errors)} API errors" if errors else "")
     )
     return "\n".join(lines)
@@ -216,6 +224,8 @@ def _change_to_json(change: ContactChange, redact: bool) -> dict[str, Any]:
             data["shared_email"] = True
     if change.action in ("create", "update"):
         data["applied"] = change.applied
+    if change.rejected:
+        data["rejected"] = True
     if change.error:
         data["error"] = change.error
     return data
@@ -237,7 +247,8 @@ def build_report(
 ) -> dict[str, Any]:
     """Assemble the JSON report. Everything a later step needs is in ``exceptions``."""
     org = pull.organisation
-    errors = [c for c in plan.changes if c.error]
+    errors = [c for c in plan.changes if c.error and not c.rejected]
+    rejected = [c for c in plan.changes if c.rejected]
     exceptions: dict[str, Any] = {
         "no_email": [
             {
@@ -277,6 +288,17 @@ def build_report(
                 "new_email": _email(item["new_email"], redact),
             }
             for item in plan.possible_changed_emails
+        ],
+        "rejected": [
+            {
+                "email": _email(c.email, redact),
+                "name": _name(c.name, redact),
+                "action": c.action,
+                "person_ids": sorted(c.desired.person_ids) if c.desired else [],
+                "sources": list(c.desired.sources) if c.desired else [],
+                "error": c.error,
+            }
+            for c in rejected
         ],
         "api_errors": [
             {"email": _email(c.email, redact), "action": c.action, "error": c.error} for c in errors
